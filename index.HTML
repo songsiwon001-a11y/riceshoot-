@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rice Shoot!</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        body { background: #050508; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: 'Press Start 2P', monospace; user-select: none; }
+        #canvas { background: #0a0a16; border: 6px solid #1e1e38; border-radius: 12px; image-rendering: pixelated; max-width: 90vw; }
+        .ctrl-btn { background: #1f2937; border: 3px solid #4b5563; color: white; border-radius: 8px; cursor: pointer; touch-action: manipulation; }
+        .ctrl-btn:active { background: #374151; }
+    </style>
+</head>
+<body class="p-4">
+    <div id="ui" class="absolute z-10 bg-black/90 p-10 rounded-2xl border-4 border-yellow-500 text-center">
+        <h1 class="text-3xl font-bold mb-6 text-yellow-400">RICE SHOOT!</h1>
+        <button id="start-btn" class="px-10 py-5 bg-emerald-600 text-white text-xl font-bold rounded-xl border-b-8 border-emerald-800 hover:brightness-110 active:translate-y-2 active:border-b-0">START</button>
+        <p class="mt-8 text-[10px] text-gray-500">Copyright 2026 super rice jamjam studio.</p>
+    </div>
+
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <div class="w-full max-w-[800px] mt-4 flex justify-between px-2">
+        <div class="grid grid-cols-3 gap-2 w-32 h-32">
+            <div></div><button id="btn-up" class="ctrl-btn">▲</button><div></div>
+            <button id="btn-left" class="ctrl-btn">◀</button><div></div><button id="btn-right" class="ctrl-btn">▶</button>
+            <div></div><button id="btn-down" class="ctrl-btn">▼</button><div></div>
+        </div>
+        <button id="btn-shoot" class="ctrl-btn w-24 h-24 bg-emerald-700">FIRE</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let drumPlayers, sixSevenPlayer, isStarted = false;
+
+        const synthMelody = new Tone.Synth({ oscillator: { type: "square" } }).toDestination();
+        const synthBass = new Tone.MonoSynth({ oscillator: { type: "triangle" } }).toDestination();
+        const missileSynth = new Tone.MonoSynth({ oscillator: { type: "sine" } }).toDestination();
+
+        const melodySeq = new Tone.Sequence((time, note) => { if (note) synthMelody.triggerAttackRelease(note, "16n", time); }, ["E5", "G5", "A5", null, "A5", "G5", "E5", "C5", "D5", "D5", "E5", "G5", "A5", null, "G5", "A5"], "8n");
+        const bassSeq = new Tone.Sequence((time, note) => { if (note) synthBass.triggerAttackRelease(note, "8n", time); }, ["A2", "A2", "G2", "G2", "E2", "E2", "C2", "D2", "A2", "A2", "G2", "G2", "C3", "B2", "G2", "E2"], "4n");
+        let drumStep = 0;
+        const customDrumLoop = new Tone.Loop((time) => {
+            const patterns = ["drum1", null, "drum2", null, "drum3", "drum1", "drum4", null, "drum1", "drum2", "drum3", null, "drum2", null, "drum5", "drum3"];
+            if (drumPlayers?.loaded && patterns[drumStep % 16]) drumPlayers.player(patterns[drumStep % 16]).start(time);
+            drumStep++;
+        }, "8n");
+
+        let player = { x: 80, y: 280, invincible: false, invincibleTimer: 0 };
+        let bullets = [], blocks = [], items = [], keys = {}, shootCooldown = 0;
+
+        document.getElementById('start-btn').addEventListener('click', async () => {
+            await Tone.start();
+            drumPlayers = new Tone.Players({ drum1: "rice jump drum.wav", drum2: "rice jump drum2.wav", drum3: "rice jump drum3.wav", drum4: "rice jump drum4.wav", drum5: "rice jump drum5.wav" }).toDestination();
+            sixSevenPlayer = new Tone.Player("six seven!.mp3").toDestination();
+            Tone.Transport.bpm.value = 135;
+            melodySeq.start(0); bassSeq.start(0); customDrumLoop.start(0); Tone.Transport.start();
+            document.getElementById('ui').style.display = 'none';
+            isStarted = true;
+            loop();
+        });
+
+        function loop() {
+            if (!isStarted) return;
+            ctx.clearRect(0, 0, 800, 600);
+            if (keys["ArrowUp"] || keys["w"]) player.y = Math.max(0, player.y - 7);
+            if (keys["ArrowDown"] || keys["s"]) player.y = Math.min(560, player.y + 7);
+            if (keys["ArrowLeft"] || keys["a"]) player.x = Math.max(0, player.x - 7);
+            if (keys["ArrowRight"] || keys["d"]) player.x = Math.min(760, player.x + 7);
+            
+            ctx.fillStyle = player.invincible ? "gold" : "#10b981";
+            ctx.fillRect(player.x, player.y, 40, 40);
+            
+            if (player.invincible) {
+                player.invincibleTimer -= 16;
+                if (player.invincibleTimer <= 0) player.invincible = false;
+                if (shootCooldown <= 0) { bullets.push({x: player.x + 40, y: player.y + 15}); shootCooldown = 4; }
+            }
+
+            bullets.forEach((b, i) => { b.x += 15; ctx.fillStyle = "#38bdf8"; ctx.fillRect(b.x, b.y, 20, 8); if(b.x > 800) bullets.splice(i, 1); });
+            blocks.forEach((b, i) => { b.x -= 2; ctx.fillStyle = "#eab308"; ctx.fillRect(b.x, b.y, 50, 50); if(b.x < -50) blocks.splice(i, 1); });
+            items.forEach((item, i) => { item.x -= 2; ctx.fillStyle = "#22d3ee"; ctx.fillRect(item.x, item.y, 30, 30); if(player.x < item.x+30 && player.x+40 > item.x && player.y < item.y+30 && player.y+40 > item.y) { items.splice(i, 1); player.invincible = true; player.invincibleTimer = 5000; sixSevenPlayer?.start(); } });
+
+            if (blocks.length < 3 && Math.random() < 0.03) blocks.push({x: 820, y: Math.random() * 500, hp: 3});
+            blocks.forEach((b, bi) => { bullets.forEach((bl, li) => { if(bl.x < b.x+50 && bl.x+20 > b.x && bl.y < b.y+50 && bl.y+8 > b.y) { bullets.splice(li, 1); b.hp--; if(b.hp <= 0) { items.push({x: b.x, y: b.y}); blocks.splice(bi, 1); } } }); });
+
+            if ((keys[" "] || keys["shoot"]) && shootCooldown <= 0) { bullets.push({x: player.x + 40, y: player.y + 15}); missileSynth.triggerAttackRelease("G4", "16n"); shootCooldown = 12; }
+            if (shootCooldown > 0) shootCooldown--;
+            requestAnimationFrame(loop);
+        }
+
+        window.addEventListener('keydown', e => keys[e.key] = true);
+        window.addEventListener('keyup', e => keys[e.key] = false);
+        const btn = (id, k) => { document.getElementById(id).onpointerdown = () => keys[k] = true; document.getElementById(id).onpointerup = () => keys[k] = false; };
+        btn('btn-up', 'ArrowUp'); btn('btn-down', 'ArrowDown'); btn('btn-left', 'ArrowLeft'); btn('btn-right', 'ArrowRight'); btn('btn-shoot', 'shoot');
+    </script>
+</body>
+</html>
