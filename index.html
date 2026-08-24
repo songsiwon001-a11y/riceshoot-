@@ -19,7 +19,8 @@
     <div id="ui" class="absolute text-center z-10 bg-black/90 p-10 rounded-2xl border-4 border-yellow-500 max-w-lg">
         <h1 class="text-4xl font-bold mb-6 text-yellow-400">RICE SHOOT!</h1>
         <p class="text-sm text-gray-300 leading-relaxed mb-8">
-            블록과 적을 쏘아 67 아이템을 획득하세요!<br><br>
+            블록과 적을 쏘아 67 아이템을 획득하세요!<br>
+            폭탄 아이템은 즉시 게임 오버가 되니 조심하세요!<br><br>
             [이동] 방향키 / WASD / 화면 버튼<br>
             [공격] Space Bar / 슈팅 버튼
         </p>
@@ -58,11 +59,10 @@
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        let drumPlayers, sixSevenPlayer, deathPlayer, isStarted = false;
+        let drumPlayers, sixSevenPlayer, deathPlayer, gunShootPlayer, bombPlayer, isStarted = false;
 
         const synthMelody = new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.4, release: 0.1 } }).toDestination();
         const synthBass = new Tone.MonoSynth({ oscillator: { type: "triangle" }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.8, release: 0.2 } }).toDestination();
-        const missileSynth = new Tone.MonoSynth({ oscillator: { type: "sine" }, envelope: { attack: 0.005, decay: 0.25, sustain: 0.01, release: 0.1 } }).toDestination();
 
         const melodySeq = new Tone.Sequence((time, note) => { if (note) synthMelody.triggerAttackRelease(note, "16n", time); }, ["E5", "G5", "A5", null, "A5", "G5", "E5", "C5", "D5", "D5", "E5", "G5", "A5", null, "G5", "A5"], "8n");
         const bassSeq = new Tone.Sequence((time, note) => { if (note) synthBass.triggerAttackRelease(note, "8n", time); }, ["A2", "A2", "G2", "G2", "E2", "E2", "C2", "D2", "A2", "A2", "G2", "G2", "C3", "B2", "G2", "E2"], "4n");
@@ -81,8 +81,10 @@
         document.getElementById('start-btn').addEventListener('click', async () => {
             await Tone.start();
             drumPlayers = new Tone.Players({ drum1: "rice jump drum.wav", drum2: "rice jump drum2.wav", drum3: "rice jump drum3.wav", drum4: "rice jump drum4.wav", drum5: "rice jump drum5.wav" }).toDestination();
-            sixSevenPlayer = new Tone.Player("six seven!.mp3").toDestination();
+            sixSevenPlayer = new Tone.Player({ url: "six seven!.mp3", loop: true }).toDestination();
             deathPlayer = new Tone.Player("라이스슈트 죽는 소리.mp3").toDestination();
+            gunShootPlayer = new Tone.Player("gun_shoot!.mp3").toDestination();
+            bombPlayer = new Tone.Player("rice bomb!.wav").toDestination();
             Tone.Transport.bpm.value = 135;
             melodySeq.start(0); bassSeq.start(0); customDrumLoop.start(0); Tone.Transport.start();
             document.getElementById('ui').style.display = 'none';
@@ -109,7 +111,10 @@
             
             if (player.invincible) {
                 player.invincibleTimer -= 16.67;
-                if (player.invincibleTimer <= 0) player.invincible = false;
+                if (player.invincibleTimer <= 0) {
+                    player.invincible = false;
+                    if (sixSevenPlayer) sixSevenPlayer.stop();
+                }
             }
 
             ctx.fillStyle = player.invincible ? "gold" : "#10b981";
@@ -139,7 +144,11 @@
                         player.lives--;
                         document.getElementById('life-val').innerText = player.lives;
                         if(deathPlayer && deathPlayer.loaded) deathPlayer.start();
-                        if (player.lives <= 0) isStarted = false;
+                        if (player.lives <= 0) {
+                            isStarted = false;
+                            if (sixSevenPlayer) sixSevenPlayer.stop();
+                            Tone.Transport.stop();
+                        }
                     }
                 }
                 if (e.x < -30) enemies.splice(i, 1);
@@ -153,13 +162,22 @@
 
             items.forEach((item, i) => {
                 item.x -= 1.5;
-                ctx.fillStyle = "#22d3ee";
+                ctx.fillStyle = item.type === 'bomb' ? "#dc2626" : "#22d3ee";
                 ctx.fillRect(item.x, item.y, item.w, item.h);
-                if (player.x < item.x + item.w && player.x + player.w > item.x && player.y < item.y + item.h && player.y + player.h > item.y) {
+                if (player.x < item.x + item.w && player.x + player.w > item.x && player.y < item.y + item.h && player.y + item.h > item.y) {
+                    if (item.type === 'bomb') {
+                        if (bombPlayer && bombPlayer.loaded) bombPlayer.start();
+                        player.lives = 0;
+                        document.getElementById('life-val').innerText = 0;
+                        isStarted = false;
+                        if (sixSevenPlayer) sixSevenPlayer.stop();
+                        Tone.Transport.stop();
+                    } else {
+                        player.invincible = true;
+                        player.invincibleTimer = 5000;
+                        if (sixSevenPlayer && sixSevenPlayer.loaded) sixSevenPlayer.start(0);
+                    }
                     items.splice(i, 1);
-                    player.invincible = true;
-                    player.invincibleTimer = 5000;
-                    if (sixSevenPlayer && sixSevenPlayer.loaded) sixSevenPlayer.start();
                 }
                 if (item.x < -50) items.splice(i, 1);
             });
@@ -170,7 +188,8 @@
                         bullets.splice(bli, 1);
                         b.hp--;
                         if (b.hp <= 0) {
-                            items.push({ x: b.x + 10, y: b.y + 10, w: 32, h: 32 });
+                            const isBomb = Math.random() < 0.25;
+                            items.push({ x: b.x + 10, y: b.y + 10, w: 32, h: 32, type: isBomb ? 'bomb' : 'sixseven' });
                             blocks.splice(bi, 1);
                             score += 100;
                             document.getElementById('score-val').innerText = score;
@@ -182,10 +201,7 @@
             let fireInterval = player.invincible ? 4 : 12;
             if ((keys[" "] || player.invincible) && shootCooldown <= 0) { 
                 bullets.push({ x: player.x + 42, y: player.y + 16 }); 
-                const now = Tone.now();
-                missileSynth.triggerAttackRelease("C5", "16n", now);
-                missileSynth.frequency.setValueAtTime(800, now);
-                missileSynth.frequency.exponentialRampToValueAtTime(150, now + 0.2);
+                if (gunShootPlayer && gunShootPlayer.loaded) gunShootPlayer.start();
                 shootCooldown = fireInterval; 
             }
             if (shootCooldown > 0) shootCooldown--;
